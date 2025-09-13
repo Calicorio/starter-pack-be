@@ -34,7 +34,7 @@ A simple Node.js REST API built using:
 
 3. **Set up environment variables**
 
-   Create a .env file in the root directory and add your configuration
+   Create a .env file in the root directory and add your configuration (ask Dani :P)
 
 4. **Run the server**
 

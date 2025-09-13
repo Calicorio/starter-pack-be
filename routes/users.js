@@ -60,8 +60,7 @@ const verifyToken = require("../middlewares/authMiddleware");
  *       401:
  *         description: Unauthorized, invalid or no token
  */
-
-router.get("/users", verifyToken, async (req, res) => {
+router.get("/", verifyToken, async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const offset = parseInt(req.query.offset) || 0;
 
@@ -91,7 +90,7 @@ router.get("/users", verifyToken, async (req, res) => {
 
 /**
  * @swagger
- * /user:
+ * /users/user:
  *   post:
  *     summary: Register a new user
  *     tags: [Users]
@@ -154,8 +153,7 @@ router.post("/user", async (req, res) => {
     // Generate a new UUID for the user ID
     const userId = uuidv4();
 
-    // Insert the new user into the database, including the role
-    const [result] = await pool.promise().execute(
+    await pool.promise().execute(
       "INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)",
       [userId, name, email, hashedPassword, role] // Add role to query
     );

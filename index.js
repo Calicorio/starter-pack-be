@@ -10,8 +10,8 @@ app.use(express.json());
 const usersRoute = require("./routes/users");
 const authRoute = require("./routes/auth");
 
-app.use("/", usersRoute);
-app.use("/auth", authRoute);
+app.use("/api/users", usersRoute);
+app.use("/api/auth", authRoute);
 
 // Swagger setup
 const swaggerUi = require("swagger-ui-express");
@@ -25,6 +25,11 @@ const swaggerOptions = {
       version: "1.0.0",
       description: "Simple API with users and login"
     },
+    servers: [
+      {
+        url: "http://localhost:4000/api"
+      }
+    ],
     components: {
       securitySchemes: {
         bearerAuth: {

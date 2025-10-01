@@ -3,6 +3,37 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const router = express.Router();
 const pool = require("../config/db"); // Import the database connection
+const verifyToken = require("../middlewares/authMiddleware");
+/**
+ * @swagger
+ * /auth/validate:
+ *   get:
+ *     summary: Validate a Bearer token and return user info if valid
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token is valid, user info returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 name:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *       401:
+ *         description: Invalid or expired token
+ */
+router.get("/validate", verifyToken, (req, res) => {
+  // req.user is set by verifyToken middleware
+  const { id, name, email } = req.user;
+  res.status(200).json({ id, name, email });
+});
 
 /**
  * @swagger
@@ -63,11 +94,11 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Generate the JWT token
+    // Generate the JWT token with 24h expiration
     const token = jwt.sign(
       { id: user.id, name: user.name, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "24h" }
     );
 
     // Return only the token in the response

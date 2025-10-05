@@ -1,8 +1,10 @@
 const jwt = require("jsonwebtoken");
 
 const verifyToken = (req, res, next) => {
-  // Get token from the Authorization header
-  const token = req.headers["authorization"]?.split(" ")[1]; // Bearer token
+  // Get token either from header or cookie
+  const headerToken = req.headers["authorization"]?.split(" ")[1];
+  const cookieToken = req.cookies?.token;
+  const token = headerToken || cookieToken;
 
   if (!token) {
     return res
@@ -10,14 +12,13 @@ const verifyToken = (req, res, next) => {
       .json({ message: "No token provided, authorization denied" });
   }
 
-  // Verify the token
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).json({ message: "Invalid token" });
-    }
-    req.user = decoded; // Attach decoded user information to the request object
-    next(); // Call next middleware (which will be your protected route handler)
-  });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ message: "Invalid token" });
+  }
 };
 
 module.exports = verifyToken;

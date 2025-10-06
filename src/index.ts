@@ -1,9 +1,12 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const swaggerUi = require("swagger-ui-express");
-const swaggerJsdoc = require("swagger-jsdoc");
+import "dotenv/config";
+import express, { Request, Response } from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import swaggerUi from "swagger-ui-express";
+import swaggerJsdoc from "swagger-jsdoc";
+
+import usersRoute from "./routes/users";
+import authRoute from "./routes/auth";
 
 const app = express();
 const PORT = 4000;
@@ -11,25 +14,19 @@ const PORT = 4000;
 // =======================
 // 🧩 Middleware
 // =======================
-
-// Parse JSON and cookies
 app.use(express.json());
 app.use(cookieParser());
 
-// ✅ Enable CORS so frontend (localhost:3000) can send/receive cookies
 app.use(
   cors({
-    origin: "http://localhost:3000", // frontend origin
-    credentials: true // allow cookies and Authorization headers
+    origin: "http://localhost:3000",
+    credentials: true
   })
 );
 
 // =======================
 // 📦 Routes
 // =======================
-const usersRoute = require("./routes/users");
-const authRoute = require("./routes/auth");
-
 app.use("/api/users", usersRoute);
 app.use("/api/auth", authRoute);
 
@@ -55,7 +52,7 @@ const swaggerOptions = {
       }
     }
   },
-  apis: ["./routes/*.js"]
+  apis: ["dist/routes/*.js"] // <-- point to compiled JS
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
@@ -64,7 +61,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // =======================
 // 🌐 Root route
 // =======================
-app.get("/", (req, res) => {
+app.get("/", (_req: Request, res: Response) => {
   res.send("Welcome to the StarterPack API");
 });
 

@@ -1,13 +1,15 @@
-const express = require("express");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
-const router = express.Router();
-const pool = require("../config/db");
-const verifyToken = require("../middlewares/authMiddleware");
-const { OAuth2Client } = require("google-auth-library");
+import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import pool from "../config/db";
+import verifyToken from "../middlewares/authMiddleware";
+import { OAuth2Client, TokenPayload } from "google-auth-library";
+import { RowDataPacket, OkPacket } from "mysql2";
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const router = Router();
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI ||
   "http://localhost:4000/api/auth/google/callback";
@@ -18,13 +20,22 @@ const client = new OAuth2Client(
   GOOGLE_REDIRECT_URI
 );
 
+interface User {
+  id: number;
+  name?: string;
+  email?: string;
+  role?: string;
+}
+
+// =======================
+// GET /auth/google
+// =======================
 /**
  * @swagger
  * tags:
  *   name: Auth
  *   description: Authentication and Authorization
  */
-
 /**
  * @swagger
  * /auth/google:
@@ -36,13 +47,16 @@ const client = new OAuth2Client(
  *       302:
  *         description: Redirect to Google OAuth2 authorization URL
  */
-router.get("/google", (req, res) => {
+router.get("/google", (req: Request, res: Response) => {
   const redirectUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
     GOOGLE_REDIRECT_URI
   )}&scope=openid%20email%20profile`;
   res.redirect(redirectUrl);
 });
 
+// =======================
+// GET /auth/google/callback
+// =======================
 /**
  * @swagger
  * /auth/google/callback:
@@ -65,51 +79,48 @@ router.get("/google", (req, res) => {
  *       500:
  *         description: Google login failed
  */
-router.get("/google/callback", async (req, res) => {
-  const { code } = req.query;
+router.get("/google/callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string;
   if (!code)
     return res.status(400).json({ message: "Missing authorization code" });
 
   try {
-    const { tokens } = await client.getToken({
-      code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_REDIRECT_URI
-    });
+    // getToken expects only the code as string
+    const { tokens } = await client.getToken(code);
 
     const ticket = await client.verifyIdToken({
-      idToken: tokens.id_token,
+      idToken: tokens.id_token!,
       audience: GOOGLE_CLIENT_ID
     });
 
-    const payload = ticket.getPayload();
+    const payload: TokenPayload | undefined = ticket.getPayload();
+    if (!payload) throw new Error("Invalid token payload");
+
     const { email, name, sub: googleId } = payload;
 
-    // Find or create user
-    let [rows] = await pool
+    // Find user in DB
+    const [rows] = await pool
       .promise()
-      .execute("SELECT * FROM users WHERE email = ?", [email]);
-    let user = rows[0];
+      .execute<RowDataPacket[]>("SELECT * FROM users WHERE email = ?", [email]);
+
+    let user: User | undefined = rows[0] as User;
 
     if (!user) {
       const [result] = await pool
         .promise()
-        .execute(
+        .execute<OkPacket>(
           "INSERT INTO users (name, email, google_id) VALUES (?, ?, ?)",
           [name, email, googleId]
         );
       user = { id: result.insertId, name, email };
     }
 
-    // Create JWT
     const jwtToken = jwt.sign(
       { id: user.id, name: user.name, email: user.email },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET!,
       { expiresIn: "24h" }
     );
 
-    // ✅ Localhost-friendly cookie
     res.cookie("token", jwtToken, {
       httpOnly: true,
       secure: false,
@@ -124,6 +135,9 @@ router.get("/google/callback", async (req, res) => {
   }
 });
 
+// =======================
+// GET /auth/validate
+// =======================
 /**
  * @swagger
  * /auth/validate:
@@ -137,11 +151,14 @@ router.get("/google/callback", async (req, res) => {
  *       401:
  *         description: Invalid or missing token
  */
-router.get("/validate", verifyToken, (req, res) => {
+router.get("/validate", verifyToken, (req: any, res: Response) => {
   const { id, name, email } = req.user;
   res.status(200).json({ id, name, email });
 });
 
+// =======================
+// POST /auth/login
+// =======================
 /**
  * @swagger
  * /auth/login:
@@ -192,28 +209,32 @@ router.get("/validate", verifyToken, (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+router.post("/login", async (req: Request, res: Response) => {
+  const { email, password } = req.body as { email: string; password: string };
+
   try {
     const [rows] = await pool
       .promise()
-      .execute("SELECT * FROM users WHERE email = ?", [email]);
+      .execute<RowDataPacket[]>("SELECT * FROM users WHERE email = ?", [email]);
 
     if (rows.length === 0)
       return res.status(401).json({ message: "Invalid email or password" });
 
-    const user = rows[0];
+    const user = rows[0] as User & {
+      password: string;
+      role: string;
+      created_at: Date;
+    };
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch)
       return res.status(401).json({ message: "Invalid email or password" });
 
     const token = jwt.sign(
       { id: user.id, name: user.name, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET!,
       { expiresIn: "24h" }
     );
 
-    // ✅ Localhost-friendly cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,
@@ -221,7 +242,6 @@ router.post("/login", async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000
     });
 
-    // ✅ Return only safe user info
     res.json({
       id: user.id,
       name: user.name,
@@ -235,6 +255,9 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// =======================
+// POST /auth/logout
+// =======================
 /**
  * @swagger
  * /auth/logout:
@@ -246,7 +269,7 @@ router.post("/login", async (req, res) => {
  *       200:
  *         description: Logout successful
  */
-router.post("/logout", (req, res) => {
+router.post("/logout", (req: Request, res: Response) => {
   res.cookie("token", "", {
     httpOnly: true,
     expires: new Date(0),
@@ -255,4 +278,4 @@ router.post("/logout", (req, res) => {
   res.status(200).json({ message: "Logout successful" });
 });
 
-module.exports = router;
+export default router;

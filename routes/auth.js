@@ -147,7 +147,7 @@ router.get("/validate", verifyToken, (req, res) => {
  * /auth/login:
  *   post:
  *     summary: Login with email and password
- *     description: Authenticates a user and issues a JWT in an HttpOnly cookie.
+ *     description: Authenticates a user, issues a JWT in an HttpOnly cookie, and returns safe user info.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -165,11 +165,32 @@ router.get("/validate", verifyToken, (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Successful login
+ *         description: Successful login, returns user info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                   example: 1
+ *                 name:
+ *                   type: string
+ *                   example: John Doe
+ *                 email:
+ *                   type: string
+ *                   example: john@example.com
+ *                 role:
+ *                   type: string
+ *                   example: user
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *                   example: 2025-10-06T12:34:56.000Z
  *       401:
- *         description: Invalid credentials
+ *         description: Invalid email or password
  *       500:
- *         description: Server error
+ *         description: Internal server error
  */
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -177,6 +198,7 @@ router.post("/login", async (req, res) => {
     const [rows] = await pool
       .promise()
       .execute("SELECT * FROM users WHERE email = ?", [email]);
+
     if (rows.length === 0)
       return res.status(401).json({ message: "Invalid email or password" });
 
@@ -186,7 +208,7 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email },
+      { id: user.id, name: user.name, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
@@ -199,7 +221,14 @@ router.post("/login", async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000
     });
 
-    res.json({ message: "Login successful" });
+    // ✅ Return only safe user info
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      created_at: user.created_at
+    });
   } catch (err) {
     console.error("Error:", err);
     res.status(500).json({ message: "Internal server error" });
